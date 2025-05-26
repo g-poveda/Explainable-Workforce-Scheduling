@@ -1,0 +1,69 @@
+{
+    "teams": [
+        "d6f0c",
+        "744cc",
+        "0bb2f",
+        "e7274"
+    ],
+    "tasks": [
+        "70567"
+    ],
+    "calendar": {
+        "744cc": [
+            [
+                0,
+                357
+            ]
+        ],
+        "d6f0c": [
+            [
+                0,
+                357
+            ]
+        ],
+        "0bb2f": [
+            [
+                0,
+                931752
+            ]
+        ],
+        "e7274": [
+            [
+                0,
+                357
+            ]
+        ]
+    },
+    "teams_to_index": {
+        "d6f0c": 0,
+        "744cc": 1,
+        "0bb2f": 2
+    },
+    "tasks_data": {
+        "70567": {
+            "duration": 45
+        }
+    },
+    "same_allocation": [],
+    "compatible_teams": {},
+    "start_window": {
+        "70567": [
+            0,
+            30.0
+        ]
+    },
+    "end_window": {
+        "70567": [
+            15.0,
+            75.0
+        ]
+    },
+    "successors": {},
+    "horizon_shift": 1754776800,
+    "original_start": {
+        "70567": 0.0
+    },
+    "original_end": {
+        "70567": 45.0
+    }
+}
