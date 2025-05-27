@@ -17,20 +17,6 @@ class DispersionFormulation:
     PROXY_SUM = "proxy-sum",
 
 
-def get_disperion_objective(time_worked, formulation=DispersionFormulation.MAX_MINUS_MIN):
-
-    if formulation == DispersionFormulation.MAX_MINUS_MIN:
-        return cp.max(time_worked) - cp.min(time_worked)
-    elif formulation == DispersionFormulation.MAX_DIFF:
-        return cp.max([x - y for x in time_worked for y in time_worked])
-    elif formulation == DispersionFormulation.PROXY_MIN_MAX:
-        return cp.max(time_worked)
-    elif formulation == DispersionFormulation.PROXY_MAX_MIN:
-        return -cp.min(time_worked)
-    elif formulation == DispersionFormulation.PROXY_SUM:
-        return cp.sum(time_worked) # TODO: check if this is correct        
-
-
 def allocation_model_file(json_file, **model_kwargs):
     tasks, calendars, same_allocation = read_instance(json_file)
     return AllocationModel(tasks, calendars, same_allocation, **model_kwargs)
@@ -160,7 +146,7 @@ class AllocationModel(LexicoSolver):
     
     # TODO: add symmetry computation and breaking constraints.
 
-    def get_dispesion_objective(self):
+    def get_dispersion_objective(self):
         """
             Minimize the dispersion of the time worked (max(time_worked) - min(time_worked))
             Formulation can be chosen from DispersionFormulation enum.
@@ -185,7 +171,7 @@ class AllocationModel(LexicoSolver):
         assert self.status().exitstatus != ExitStatus.NOT_RUN, "Model should be solved before getting dispersion value"
         used = self.used.value()
         time_worked = self.time_worked.value()
-        return max([tw for tw in time_worked if used[tw]]) - min([tw for tw in time_worked if used[tw]])
+        return max([tw for is_used,tw in zip(used, time_worked) if is_used]) - min([tw for is_used,tw in zip(used, time_worked) if is_used])
     
     def get_solution(self): # return a solution as a dataframe
         """
@@ -263,7 +249,7 @@ class SchedulingModel(AllocationModel):
             lb = int(lb_solver.ort_solver.BestObjectiveBound())
 
         if add_to_model:
-            self.soft += self.get_nb_teams_objective() >= lb
+            self += self.get_nb_teams_objective() >= lb
 
         return lb
         
@@ -313,3 +299,8 @@ class SchedulingModel(AllocationModel):
         solution['start'] = self.start.value()
         solution['end'] = self.end.value()
         return solution
+    
+    def visualize_solution(self, *args, **kwargs):
+        fig, ax = super().visualize_solution(*args, **kwargs)
+        ax.set_title("Solution to the scheduling problem")
+        return fig, ax
