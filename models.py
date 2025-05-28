@@ -300,7 +300,7 @@ class SchedulingModel(AllocationModel):
         """
         solution = self.tasks[['task_id', 'original_start', 'original_end']].copy()
         assigned_teams = np.sum(self.alloc.value() * np.arange(1,len(self.TEAMS)+1), axis=1)
-        solution['assigned_team'] = [self.TEAMS[idx-1] if idx > 0 else "Unallocacted" for idx in assigned_teams]
+        solution['assigned_team'] = [self.TEAMS[idx-1] if idx > 0 else "Unallocated" for idx in assigned_teams]
         solution['start'] = self.start.value()
         solution['end'] = self.end.value()
         return solution
