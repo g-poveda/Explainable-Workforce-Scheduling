@@ -198,7 +198,11 @@ class AllocationModel(LexicoSolver):
         # plot calendar intervals as darkened bars
                 
         for _, task in sol.iterrows():
-            plot_task(ax, task['start'], task['end'], teams.index(task['assigned_team']), task['task_id'], **kwargs)
+            index_team = len(teams) # virtual unallocated team.
+            if task['assigned_team'] in teams:
+                index_team = teams.index(task['assigned_team'])
+
+            plot_task(ax, task['start'], task['end'], index_team, task['task_id'], **kwargs)
 
         for _, cal in self.calendars.iterrows():
             if cal['team_id'] in teams:
@@ -207,10 +211,11 @@ class AllocationModel(LexicoSolver):
         ax.set_xlabel("Time in minutes")
         ax.set_ylabel("Team")
         ax.set_title("Solution to the allocation problem")
-        ax.set_yticks(list(range(len(teams))), teams)
+        ax.set_yticks(list(range(len(teams)+1)), teams+["Unset"])
     
         return fig, ax
         
+
 
 
 class SchedulingModel(AllocationModel):

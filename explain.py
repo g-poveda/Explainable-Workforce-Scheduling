@@ -88,9 +88,16 @@ class FeasibilityResotorationModel(SchedulingModel):
         for i, orig_sol in changed.iterrows():
             new_sol = repaired_sol.loc[i]
             duration = orig_sol['end'] - orig_sol['start']
+            index_orig_sol = len(used_teams)
+            index_new_sol = len(used_teams)
+            if orig_sol['assigned_team'] in used_teams:
+                index_orig_sol = used_teams.index(orig_sol['assigned_team'])
+            if new_sol['assigned_team'] in used_teams:
+                index_new_sol = used_teams.index(new_sol["assigned_team"])
+
             ax.annotate("", xycoords='data',
-                            xytext=(orig_sol['start']+duration//2, used_teams.index(orig_sol['assigned_team'])), 
-                            xy=    (new_sol['start']+duration//2, used_teams.index(new_sol['assigned_team'])), 
+                            xytext=(orig_sol['start']+duration//2, index_orig_sol),
+                            xy=    (new_sol['start']+duration//2, index_new_sol),
                             arrowprops=dict(arrowstyle="->", edgecolor="red"),
             )
 
