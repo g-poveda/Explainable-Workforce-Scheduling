@@ -30,9 +30,9 @@ For example, by rescheduling and reallocating the tasks to teams that are not di
 
 Below, we show how we can repair the schedule after disruptions have occurred.
 
-<div style="display: flex; align-items: center; gap: 10px;">
-  <img src="fig/disruption.png" width=50%>
-  <img src="fig/repair.png" width=50%>
+<div style="display: flex; align-items: center;">
+  <img src="fig/disruption.png" width=48%>
+  <img src="fig/repair.png" width=48%>
 </div>
 
 
