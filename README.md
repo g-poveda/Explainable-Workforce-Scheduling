@@ -56,7 +56,7 @@ If you use the models or data from this repository, please consider citing:
 ```bibtex
 @inproceedings{bleukx2025allocation,
   author       = {Ignace Bleukx and
-                  Ryma Bouzazouma and
+                  Ryma Boumazouza and
                   Tias Guns and
                   Nadine Laage and
                   Guillaume Poveda},
