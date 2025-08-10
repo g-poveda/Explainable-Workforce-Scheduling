@@ -47,24 +47,9 @@ class FeasibilityResotorationModel(SchedulingModel):
     def max_of_shifted_tasks(self):
         return cp.max(cp.abs(self.start - self.original_solution['start'].astype(int)))
     
-
-
     ###########################################################
     #                     Visualization                        #
     ###########################################################
-
-    def visualize_original_solution_with_disruptions(self, fig=None, ax=None):
-        fig, ax = super().visualize_solution(sol=self.original_solution, fig=fig, ax=ax)
-        teams = sorted(set(self.original_solution['assigned_team']))
-        for _, disruption in self.disruption.iterrows():
-            if disruption["team_id"] in teams:
-                plot_task(ax, disruption['start_unavailable'], disruption['end_unavailable'],
-                          teams.index(disruption['team_id']),
-                          facecolor='red', alpha=0.5,hatch="//", height=0.8)
-            
-        ax.set_title("Original solution with disruptions")
-        return fig, ax
-    
 
     def visualize_repair(self):
         # TODO: not sure if this will work if a task is unallocated
