@@ -4,7 +4,9 @@ import numpy as np
 from copy import copy
 import matplotlib.pyplot as plt
 from cpmpy.solvers.solver_interface import ExitStatus
-
+from cpmpy.expressions.variables import _BoolVarImpl
+from cpmpy.transformations.normalize import toplevel_list
+import pandas as pd
 from utils import read_instance, LexicoSolver, plot_task, UNALLOC
 
 # from utils import TEAMS
@@ -15,20 +17,6 @@ class DispersionFormulation:
     PROXY_MIN_MAX = "proxy-min-max",
     PROXY_MAX_MIN = "proxy-max-min",
     PROXY_SUM = "proxy-sum",
-
-
-def get_disperion_objective(time_worked, formulation=DispersionFormulation.MAX_MINUS_MIN):
-
-    if formulation == DispersionFormulation.MAX_MINUS_MIN:
-        return cp.max(time_worked) - cp.min(time_worked)
-    elif formulation == DispersionFormulation.MAX_DIFF:
-        return cp.max([x - y for x in time_worked for y in time_worked])
-    elif formulation == DispersionFormulation.PROXY_MIN_MAX:
-        return cp.max(time_worked)
-    elif formulation == DispersionFormulation.PROXY_MAX_MIN:
-        return -cp.min(time_worked)
-    elif formulation == DispersionFormulation.PROXY_SUM:
-        return cp.sum(time_worked) # TODO: check if this is correct        
 
 
 def allocation_model_file(json_file, **model_kwargs):
@@ -45,7 +33,7 @@ class AllocationModel(LexicoSolver):
 
         self.tasks = tasks
         self.calendars = calendars
-        self.same_allocation = same_allocation
+        self.same_alloc_groups = same_allocation
         self.allow_unalloc = allow_unalloc
         self.dispersion_formulation = dispersion_formulation
 
@@ -55,13 +43,25 @@ class AllocationModel(LexicoSolver):
         self.time_worked = cp.intvar(0, tasks['duration'].sum(), shape=len(self.TEAMS), name="time")
 
         self.soft, self.hard = [], []
-        self.soft += self.task_is_allocated(allow_unalloc)
-        self.soft += self.task_team_compatibility()
-        self.hard += self.overlapping_tasks()
-        self.hard += self.team_usage()
-        self.hard += self.time_worked_constraints()
+        
+        self.add_soft_constraint(self.task_is_allocated(allow_unalloc))
+        self.add_soft_constraint(self.same_allocation())
+        self.add_soft_constraint(self.task_team_compatibility())
+        self.add_soft_constraint(self.overlapping_tasks())
+        
+        self.add_hard_constraint(self.team_usage())
+        self.add_hard_constraint(self.time_worked_constraints())
 
-        self += self.soft + self.hard
+        self.disruptions = pd.DataFrame(columns=["team_id", "start_unavailable", "end_unavailable"])
+
+
+    def add_soft_constraint(self, cons):
+        self.soft += toplevel_list(cons)
+        self += cons
+
+    def add_hard_constraint(self, cons):
+        self.hard += toplevel_list(cons)
+        self += cons
 
 
     def task_is_allocated(self, allow_unalloc): # each task is assigned one team
@@ -90,7 +90,7 @@ class AllocationModel(LexicoSolver):
                 cons.set_description(f"Team {team} cannot be assigned to task {idx}")
                 constraints.append(cons)
         return constraints
-    
+
     def overlapping_tasks(self):
         """
             Overlapping tasks cannot be assigned to the same team.
@@ -120,10 +120,10 @@ class AllocationModel(LexicoSolver):
             Some tasks must be assigned to the same team.
         """
         constraints = []
-        for group in self.same_allocation:
-            group = [self.task_idx[t] for t in group]
+        for group in self.same_alloc_groups:
+            group = self.tasks.index[self.tasks['task_id'].isin(group)].tolist()
             for idx, team in enumerate(self.TEAMS):
-                cons = cp.AllEqual(self.alloc[group, idx])
+                cons = cp.AllEqual(self.alloc[group, self.TEAMS.index(team)])
                 cons.set_description(f"Tasks {group} must be assigned to the same team (team {team})")
                 constraints.append(cons)
         return constraints
@@ -191,7 +191,7 @@ class AllocationModel(LexicoSolver):
         return cons
             
     
-    def get_dispesion_objective(self):
+    def get_dispersion_objective(self):
         """
             Minimize the dispersion of the time worked (max(time_worked) - min(time_worked))
             Formulation can be chosen from DispersionFormulation enum.
@@ -216,7 +216,7 @@ class AllocationModel(LexicoSolver):
         assert self.status().exitstatus != ExitStatus.NOT_RUN, "Model should be solved before getting dispersion value"
         used = self.used.value()
         time_worked = self.time_worked.value()
-        return max([tw for tw in time_worked if used[tw]]) - min([tw for tw in time_worked if used[tw]])
+        return max([tw for is_used,tw in zip(used, time_worked) if is_used]) - min([tw for is_used,tw in zip(used, time_worked) if is_used])
     
     def get_solution(self): # return a solution as a dataframe
         """
@@ -229,6 +229,30 @@ class AllocationModel(LexicoSolver):
         solution['end'] = solution['original_end']
         return solution
     
+    def add_disruption(self, disruption):
+        """
+            Add a disruption to the model.
+        """
+
+        if isinstance(disruption, list): # multiple disruptions
+            for d in disruption:
+                self.add_disruption(d)
+        
+        else: # single disruption
+            print("Adding disruption", disruption)
+            self.disruptions = pd.concat([self.disruptions, disruption])
+            for _, row in disruption.iterrows():
+                for task_idx, task in self.tasks.iterrows():
+                    overlapping = (row['start_unavailable'] <= task['original_end']) & (task['original_start'] <= row['end_unavailable'])
+                    if overlapping:
+                        cons = self.alloc[task_idx, self.TEAMS.index(row['team_id'])] == False
+                        cons.set_description(f"Team {row['team_id']} cannot execute task {task['task_id']} due to a disruption from {row['start_unavailable']} to {row['end_unavailable']}")
+                        self.add_hard_constraint(cons)
+    
+    ###########################################################
+    #                     Visualization                        #
+    ###########################################################
+
     def visualize_solution(self, sol=None, figsize=(10, 6), fig=None, ax=None, teams=None, **kwargs):
         """
             Visualize the solution of the last solve call using matplotlib.
@@ -239,12 +263,15 @@ class AllocationModel(LexicoSolver):
         if fig is None:
             assert ax is None, "ax should not be provided if fig is not provided"
             fig, ax = plt.subplots(figsize=figsize)
-        
-        # plot calendar intervals as darkened bars
-                
+                        
         for _, task in sol.iterrows():
-            plot_task(ax, task['start'], task['end'], teams.index(task['assigned_team']), task['task_id'], **kwargs)
+            index_team = len(teams) # virtual unallocated team.
+            if task['assigned_team'] in teams:
+                index_team = teams.index(task['assigned_team'])
 
+            plot_task(ax, task['start'], task['end'], index_team, task['task_id'], **kwargs)
+
+        # plot calendar intervals as darkened bars
         for _, cal in self.calendars.iterrows():
             if cal['team_id'] in teams:
                 plot_task(ax, cal['start_unavailable'], cal['end_unavailable'], teams.index(cal['team_id']), facecolor="black")
@@ -252,10 +279,55 @@ class AllocationModel(LexicoSolver):
         ax.set_xlabel("Time in minutes")
         ax.set_ylabel("Team")
         ax.set_title("Solution to the allocation problem")
-        ax.set_yticks(list(range(len(teams))), teams)
+        ax.set_yticks(list(range(len(teams)+1)), teams+["Unset"])
     
         return fig, ax
         
+    def _visualize_disruptions(self, ax, teams):
+        for _, disruption in self.disruptions.iterrows():
+            if disruption["team_id"] in teams:
+                plot_task(ax, disruption['start_unavailable'], disruption['end_unavailable'],
+                          teams.index(disruption['team_id']),
+                          facecolor='red', alpha=0.5,hatch="//", height=0.8)
+
+    def visualize_solution_with_disruptions(self, sol=None, fig=None, ax=None):
+        if sol is None:
+            sol = self.get_solution()
+        fig, ax = self.visualize_solution(sol=sol, fig=fig, ax=ax)
+        teams = sorted(set(sol['assigned_team']))
+        self._visualize_disruptions(ax, teams)
+        ax.set_title("Original solution with disruptions")
+        return fig, ax
+
+    def highlight_tasks(self, tasks, sol=None,fig=None, ax=None):
+        if sol is None:
+            sol = self.get_solution()
+        fig, ax = self.visualize_solution(sol=sol, fig=fig, ax=ax)
+        teams = sorted(set(sol['assigned_team']))
+        
+        plotted_tasks = set() # avoid plotting the same task multiple times
+        for task in tasks:
+            if isinstance(task, int):
+                task = sol.loc[task]
+            elif isinstance(task, str):
+                task = next(row for i, row in sol.iterrows() if row['task_id'] == task)
+            elif isinstance(task, _BoolVarImpl):
+                for task_idx, bvars in enumerate(self.alloc):
+                    if task in set(bvars):
+                        task = sol.loc[task_idx]
+                        break
+                else:
+                    raise ValueError(f"Task {task} not found in solution")
+            else:
+                raise ValueError(f"Invalid task type: {type(task)}")
+            
+            if task['task_id'] not in plotted_tasks:
+                plot_task(ax, task['original_start'], task['original_end'], teams.index(task['assigned_team']), task['task_id'], facecolor="blue", alpha=1)
+                plotted_tasks.add(task['task_id'])
+
+        self._visualize_disruptions(ax, teams)
+        return fig, ax
+
 
 
 class SchedulingModel(AllocationModel):
@@ -273,7 +345,7 @@ class SchedulingModel(AllocationModel):
         
         super().__init__(tasks, calendars, same_allocation, allow_unalloc, dispersion_formulation)
         # super will call `self.overlapping_tasks()`
-        self.soft += self.precedence_constraints()
+        self.add_soft_constraint(self.precedence_constraints())
 
     def get_lower_bound(self, add_to_model=False, **kwargs):
         """
@@ -294,7 +366,7 @@ class SchedulingModel(AllocationModel):
             lb = int(lb_solver.ort_solver.BestObjectiveBound())
 
         if add_to_model:
-            self.soft += self.get_nb_teams_objective() >= lb
+            self.add_hard_constraint(self.get_nb_teams_objective() >= lb)
 
         return lb
     
@@ -343,7 +415,12 @@ class SchedulingModel(AllocationModel):
         """
         solution = self.tasks[['task_id', 'original_start', 'original_end']].copy()
         assigned_teams = np.sum(self.alloc.value() * np.arange(1,len(self.TEAMS)+1), axis=1)
-        solution['assigned_team'] = [self.TEAMS[idx-1] if idx > 0 else "Unallocacted" for idx in assigned_teams]
+        solution['assigned_team'] = [self.TEAMS[idx-1] if idx > 0 else "Unallocated" for idx in assigned_teams]
         solution['start'] = self.start.value()
         solution['end'] = self.end.value()
         return solution
+    
+    def visualize_solution(self, *args, **kwargs):
+        fig, ax = super().visualize_solution(*args, **kwargs)
+        ax.set_title("Solution to the scheduling problem")
+        return fig, ax
