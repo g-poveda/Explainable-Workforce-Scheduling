@@ -192,7 +192,6 @@ class AllocationModel(LexicoSolver):
                 groups[frozenset(tasks)] = []
             groups[frozenset(tasks)].append(team)
 
-        print("Equivalent teams:", groups.values())
         return list(groups.values())
 
     
