@@ -158,8 +158,39 @@ class AllocationModel(LexicoSolver):
         """
         return cp.sum(self.used)
     
-    # TODO: add symmetry computation and breaking constraints.
+    def get_equivalent_teams(self):
+        """
+            Get the equivalent teams.
+            Returns a list of lists of equivalent teams.
+            Teams in the same group are equivalent.
+        """
+        teams_tasks = {team : set() for team in self.TEAMS}
+        for i, task in self.tasks.iterrows():
+            for team in task['team_ids']:
+        
+                if len(self.calendars) > 0:
+                    cal = self.calendars[self.calendars['team_id'] == team]
+                    cal_overlapping = (cal['start_unavailable'] <= task['original_start']) & (cal['end_unavailable'] > task['original_start'])
+                    if cal_overlapping.any():
+                        continue
+                teams_tasks[team].add(i)
+        
+        # team_tasks[team] = set of tasks that CAN be assigned to team `team`
+        # now find teams which can be assigned to the same sets.
+        # check for equivalency
 
+    
+    def get_symmetry_breaking_constraints(self):
+        
+        cons = []
+        for group in self.get_equivalent_teams():
+            # sort teams and set lex-leader constraints
+            teams = sorted(group)
+            for t1, t2 in zip(teams[:-1], teams[1:]):
+                cons.append(self.used[self.TEAMS.index(t2)].implies(self.used[self.TEAMS.index(t1)]))
+        return cons
+            
+    
     def get_dispesion_objective(self):
         """
             Minimize the dispersion of the time worked (max(time_worked) - min(time_worked))
@@ -266,6 +297,9 @@ class SchedulingModel(AllocationModel):
             self.soft += self.get_nb_teams_objective() >= lb
 
         return lb
+    
+    def get_equivalent_teams(self):
+        return [[]]
         
     def overlapping_tasks(self): # override parent method, need to take into account variable start and end
         """
