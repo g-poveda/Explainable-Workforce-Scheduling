@@ -26,7 +26,10 @@ def allocation_model_file(json_file, **model_kwargs):
 class AllocationModel(LexicoSolver):
 
 
-    def __init__(self, tasks, calendars, same_allocation, allow_unalloc=False, dispersion_formulation=DispersionFormulation.MAX_MINUS_MIN):
+    def __init__(self, tasks, calendars, same_allocation, allow_unalloc=False, 
+                 dispersion_formulation=DispersionFormulation.MAX_MINUS_MIN, 
+                 break_symmetries=True,
+                 make_time_worked_vars=True):
         super().__init__()
 
         self.TEAMS = sorted(set().union(*[t['team_ids'] for _, t in tasks.iterrows()]))
@@ -40,7 +43,8 @@ class AllocationModel(LexicoSolver):
         # make variables
         self.alloc = cp.boolvar(shape=(len(tasks), len(self.TEAMS)), name="x")
         self.used = cp.boolvar(shape=len(self.TEAMS), name="used")
-        self.time_worked = cp.intvar(0, tasks['duration'].sum(), shape=len(self.TEAMS), name="time")
+        if make_time_worked_vars:
+            self.time_worked = cp.intvar(0, tasks['duration'].sum(), shape=len(self.TEAMS), name="time")
 
         self.soft, self.hard = [], []
         
@@ -50,7 +54,11 @@ class AllocationModel(LexicoSolver):
         self.add_soft_constraint(self.overlapping_tasks())
         
         self.add_hard_constraint(self.team_usage())
-        self.add_hard_constraint(self.time_worked_constraints())
+        if make_time_worked_vars:
+            self.add_hard_constraint(self.time_worked_constraints())
+
+        if break_symmetries:
+            self.add_hard_constraint(self.get_symmetry_breaking_constraints())
 
         self.disruptions = pd.DataFrame(columns=["team_id", "start_unavailable", "end_unavailable"])
 
@@ -172,12 +180,20 @@ class AllocationModel(LexicoSolver):
                     cal = self.calendars[self.calendars['team_id'] == team]
                     cal_overlapping = (cal['start_unavailable'] <= task['original_start']) & (cal['end_unavailable'] > task['original_start'])
                     if cal_overlapping.any():
-                        continue
+                        continue # cannot be assigned to this team due to calendar
                 teams_tasks[team].add(i)
         
         # team_tasks[team] = set of tasks that CAN be assigned to team `team`
         # now find teams which can be assigned to the same sets.
         # check for equivalency
+        groups = dict()
+        for team, tasks in teams_tasks.items():
+            if frozenset(tasks) not in groups:
+                groups[frozenset(tasks)] = []
+            groups[frozenset(tasks)].append(team)
+
+        print("Equivalent teams:", groups.values())
+        return list(groups.values())
 
     
     def get_symmetry_breaking_constraints(self):
@@ -332,7 +348,7 @@ class AllocationModel(LexicoSolver):
 
 class SchedulingModel(AllocationModel):
 
-    def __init__(self, tasks, calendars, same_allocation, allow_unalloc=False, dispersion_formulation=DispersionFormulation.MAX_MINUS_MIN):
+    def __init__(self, tasks, calendars, same_allocation, allow_unalloc=False, dispersion_formulation=DispersionFormulation.MAX_MINUS_MIN, break_symmetries=True):
         
         # make start and end variables
         self.start, self.end = [], []
@@ -343,7 +359,7 @@ class SchedulingModel(AllocationModel):
         self.start = cp.cpm_array(self.start)
         self.end = cp.cpm_array(self.end)
         
-        super().__init__(tasks, calendars, same_allocation, allow_unalloc, dispersion_formulation)
+        super().__init__(tasks, calendars, same_allocation, allow_unalloc, dispersion_formulation, break_symmetries)
         # super will call `self.overlapping_tasks()`
         self.add_soft_constraint(self.precedence_constraints())
 
