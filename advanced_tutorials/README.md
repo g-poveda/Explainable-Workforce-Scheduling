@@ -11,8 +11,8 @@ Each notebook of the series follow the logic of
 
 ## Prerequisites 
 
-``
+```
 pip install discrete-optimization[plotly]
-``
+```
 
 
